@@ -639,6 +639,10 @@ function MultiLanguageSpeech(texts, options, settings) {
   /**
    * Start playback from current index
    * Uses chrome.tts.speak with enqueue for minimal gaps
+   * 
+   * Note: Chrome TTS API may have inherent small gaps between utterances
+   * when switching voices, even with enqueue. This is a platform limitation.
+   * Local voices minimize this delay compared to cloud voices.
    */
   function startPlayback() {
     if (!brapi.tts || currentIndex >= segmentTexts.length) {
@@ -656,6 +660,12 @@ function MultiLanguageSpeech(texts, options, settings) {
       const isFirst = (i === startIndex);
       const opts = segmentOptions[i];
       const text = segmentTexts[i];
+      
+      // Safety check: ensure we have valid options
+      if (!text || !opts || !opts.voice) {
+        console.warn(`Skipping segment ${i} due to invalid options`);
+        continue;
+      }
       
       brapi.tts.speak(text, {
         voiceName: opts.voice.voiceId || opts.voice.voiceName,
