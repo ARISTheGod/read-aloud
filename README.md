@@ -98,6 +98,38 @@ You can change the voice, reading speed, pitch, or enable text highlighting:
 [Using Premium Voices (Google Wavenet & Amazon Polly)](docs/usage/premium-voices.md)
 
 
+### Per-Word Language Detection (Experimental)
+
+Read Aloud now supports automatic language detection and TTS voice switching for mixed-language text. This feature is especially useful when reading documents that contain multiple languages (e.g., Greek text with English technical terms, Spanish with French phrases, etc.).
+
+**How it works:**
+- Automatically detects the language of each word in the text
+- Switches TTS voices on-the-fly to use the appropriate language for each word
+- Works with any language combination supported by your browser's TTS voices
+
+**How to enable:**
+1. Open extension settings (click the Read Aloud icon, then the gear icon)
+2. Scroll to "Per-Word Language Detection" section
+3. Check "Enable automatic language switching for mixed-language text"
+4. Adjust the "Detection Confidence Threshold" if needed:
+   - Higher values (70-100%): More conservative, fewer false switches
+   - Lower values (50-70%): More aggressive, switches more often
+
+**Example:**
+- Greek text: "Καλημέρα" → Uses Greek TTS voice
+- English word: "hello" → Automatically switches to English TTS voice
+- Greek text: "κόσμος" → Switches back to Greek TTS voice
+
+**Browser Compatibility:**
+- Chrome 130+: Uses native Language Detection API for best accuracy
+- Older browsers: Falls back to heuristic-based detection using character scripts
+
+**Note:** This is an experimental feature. It works best with:
+- Text that clearly uses different language scripts (e.g., Greek + English, Arabic + English)
+- Multiple TTS voices installed for the languages in your text
+- Shorter text segments (better accuracy for individual words)
+
+
 ## Installation
 
 ### Chrome and Chromium-based browsers

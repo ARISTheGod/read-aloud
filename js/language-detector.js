@@ -152,37 +152,62 @@
    * @returns {Object} Proportion of each script type (0-1)
    */
   function detectScripts(text) {
-    const len = text.length;
     let greek = 0, cyrillic = 0, arabic = 0, hebrew = 0, cjk = 0, latin = 0;
+    let totalScriptChars = 0;
     
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i);
       
       // Greek: 0x0370-0x03FF
-      if (code >= 0x0370 && code <= 0x03FF) greek++;
+      if (code >= 0x0370 && code <= 0x03FF) {
+        greek++;
+        totalScriptChars++;
+      }
       // Cyrillic: 0x0400-0x04FF
-      else if (code >= 0x0400 && code <= 0x04FF) cyrillic++;
+      else if (code >= 0x0400 && code <= 0x04FF) {
+        cyrillic++;
+        totalScriptChars++;
+      }
       // Arabic: 0x0600-0x06FF
-      else if (code >= 0x0600 && code <= 0x06FF) arabic++;
+      else if (code >= 0x0600 && code <= 0x06FF) {
+        arabic++;
+        totalScriptChars++;
+      }
       // Hebrew: 0x0590-0x05FF
-      else if (code >= 0x0590 && code <= 0x05FF) hebrew++;
+      else if (code >= 0x0590 && code <= 0x05FF) {
+        hebrew++;
+        totalScriptChars++;
+      }
       // CJK: 0x4E00-0x9FFF (Chinese), 0x3040-0x309F (Hiragana), 0x30A0-0x30FF (Katakana)
       else if ((code >= 0x4E00 && code <= 0x9FFF) || 
                (code >= 0x3040 && code <= 0x309F) || 
-               (code >= 0x30A0 && code <= 0x30FF)) cjk++;
+               (code >= 0x30A0 && code <= 0x30FF)) {
+        cjk++;
+        totalScriptChars++;
+      }
       // Latin: 0x0041-0x005A, 0x0061-0x007A, 0x00C0-0x024F
       else if ((code >= 0x0041 && code <= 0x005A) || 
                (code >= 0x0061 && code <= 0x007A) || 
-               (code >= 0x00C0 && code <= 0x024F)) latin++;
+               (code >= 0x00C0 && code <= 0x024F)) {
+        latin++;
+        totalScriptChars++;
+      }
+    }
+    
+    // Avoid division by zero
+    if (totalScriptChars === 0) {
+      return {
+        greek: 0, cyrillic: 0, arabic: 0, hebrew: 0, cjk: 0, latin: 0
+      };
     }
     
     return {
-      greek: greek / len,
-      cyrillic: cyrillic / len,
-      arabic: arabic / len,
-      hebrew: hebrew / len,
-      cjk: cjk / len,
-      latin: latin / len
+      greek: greek / totalScriptChars,
+      cyrillic: cyrillic / totalScriptChars,
+      arabic: arabic / totalScriptChars,
+      hebrew: hebrew / totalScriptChars,
+      cjk: cjk / totalScriptChars,
+      latin: latin / totalScriptChars
     };
   }
 
@@ -204,7 +229,8 @@
    * Check if text is only punctuation
    */
   function isPunctuation(text) {
-    return /^[^\w\s]+$/.test(text);
+    // Use Unicode-aware regex to properly handle non-Latin characters
+    return /^[^\p{L}\p{N}\s]+$/u.test(text);
   }
 
   /**
@@ -298,8 +324,9 @@
    */
   function tokenizeText(text) {
     const tokens = [];
-    // Match words (including apostrophes for contractions) or punctuation
-    const regex = /[\w'-]+|[^\w\s]+/gu;
+    // Match words (Unicode letters, numbers, apostrophes) or punctuation
+    // \p{L} = any Unicode letter, \p{N} = any Unicode number
+    const regex = /[\p{L}\p{N}'-]+|[^\p{L}\p{N}\s]+/gu;
     let match;
     let lastIndex = 0;
 
