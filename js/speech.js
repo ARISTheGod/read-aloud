@@ -566,26 +566,39 @@ function MultiLanguageSpeech(texts, options, settings) {
 
       console.log("Language segments detected:", segments.length, segments.map(s => ({lang: s.lang, preview: s.text.substring(0, 30)})));
 
-      // Create Speech objects for each language segment
+      // PRE-LOAD ALL VOICES IN PARALLEL (Performance optimization for fast playback)
+      // Extract unique languages from all segments
+      const uniqueLangs = [...new Set(segments.map(s => s.lang))];
+      const voiceCache = new Map();
+      
+      // Load all voices in parallel using Promise.all
+      await Promise.all(
+        uniqueLangs.map(async lang => {
+          try {
+            const voice = await getSpeechVoice(settings.voiceName, lang);
+            if (voice) {
+              voiceCache.set(lang, voice);
+            }
+          } catch (error) {
+            console.warn("Error pre-loading voice for language:", lang, error);
+          }
+        })
+      );
+
+      // Create Speech objects for each language segment using pre-loaded voices
       for (const segment of segments) {
         if (!segment.text.trim()) continue; // Skip empty segments
 
         const segmentOptions = {...options};
         segmentOptions.lang = segment.lang;
 
-        // Get appropriate voice for this language
-        try {
-          const voice = await getSpeechVoice(settings.voiceName, segment.lang);
-          if (voice) {
-            segmentOptions.voice = voice;
-          } else {
-            // Fall back to default voice if no voice available for this language
-            console.warn("No voice available for language:", segment.lang, "- using default");
-            segmentOptions.voice = options.voice;
-            segmentOptions.lang = options.lang;
-          }
-        } catch (error) {
-          console.warn("Error getting voice for language:", segment.lang, error);
+        // Use pre-loaded voice from cache (no await needed - instant!)
+        const voice = voiceCache.get(segment.lang);
+        if (voice) {
+          segmentOptions.voice = voice;
+        } else {
+          // Fall back to default voice if no voice available for this language
+          console.warn("No voice available for language:", segment.lang, "- using default");
           segmentOptions.voice = options.voice;
           segmentOptions.lang = options.lang;
         }
