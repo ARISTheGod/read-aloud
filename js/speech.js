@@ -646,6 +646,15 @@ function MultiLanguageSpeech(texts, options, settings) {
 
     currentSpeech = speechQueue[currentSpeechIndex];
     
+    // Warm up next segment for faster transition (if available)
+    const nextIndex = currentSpeechIndex + 1;
+    if (nextIndex < speechQueue.length) {
+      const nextSpeech = speechQueue[nextIndex];
+      // Trigger getState to warm up the next speech object
+      // This primes any lazy initialization
+      nextSpeech.getState().catch(() => {});
+    }
+    
     // Set up end callback to move to next segment
     currentSpeech.onEnd = (err) => {
       if (err) {
