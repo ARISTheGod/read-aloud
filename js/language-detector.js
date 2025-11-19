@@ -253,6 +253,7 @@
    * @param {Array<string>} options.expectedLanguages - Likely languages in the text
    * @param {number} options.threshold - Minimum confidence threshold (0-1), default 0.7
    * @param {string} options.defaultLang - Default language when confidence is low
+   * @param {number} options.minWordLength - Minimum word length to trigger voice switch (default 1)
    * @returns {Promise<Array<Object>>} Array of {text: string, lang: string} segments
    * 
    * Example output:
@@ -266,7 +267,8 @@
     const {
       expectedLanguages = [],
       threshold = 0.7,
-      defaultLang = 'en'
+      defaultLang = 'en',
+      minWordLength = 1
     } = options;
 
     // Handle empty input
@@ -290,6 +292,13 @@
         tokenLang = defaultLang;
       } else {
         tokenLang = detection.lang;
+      }
+
+      // Apply minimum word length threshold
+      // If the word is shorter than minWordLength, keep it in the current segment's language
+      // to avoid jarring voice switches for short words/acronyms
+      if (token.text.length < minWordLength && currentSegment) {
+        tokenLang = currentSegment.lang;
       }
 
       // Batch consecutive same-language tokens into single segment

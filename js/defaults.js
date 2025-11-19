@@ -41,6 +41,7 @@ var defaults = {
   highlightWindowSize: 2,
   perWordLangDetection: false,
   langDetectionThreshold: 0.7,
+  minWordLengthForSwitch: 1,
   allowedLanguages: ['en', 'el', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko', 'ar', 'he'],
 };
 
@@ -114,7 +115,7 @@ const settingsChange$ = rxjs.fromEventPattern(
 
 function getSettings(names) {
   return new Promise(function(fulfill) {
-    brapi.storage.local.get(names || ["voiceName", "rate", "pitch", "volume", "showHighlighting", "languages", "highlightFontSize", "highlightWindowSize", "preferredVoices", "useEmbeddedPlayer", "fixBtSilenceGap", "darkMode", "perWordLangDetection", "langDetectionThreshold", "allowedLanguages"], fulfill);
+    brapi.storage.local.get(names || ["voiceName", "rate", "pitch", "volume", "showHighlighting", "languages", "highlightFontSize", "highlightWindowSize", "preferredVoices", "useEmbeddedPlayer", "fixBtSilenceGap", "darkMode", "perWordLangDetection", "langDetectionThreshold", "minWordLengthForSwitch", "allowedLanguages"], fulfill);
   });
 }
 
@@ -126,7 +127,7 @@ function updateSettings(items) {
 
 function clearSettings(names) {
   return new Promise(function(fulfill) {
-    brapi.storage.local.remove(names || ["voiceName", "rate", "pitch", "volume", "showHighlighting", "languages", "highlightFontSize", "highlightWindowSize", "preferredVoices", "useEmbeddedPlayer", "fixBtSilenceGap", "darkMode", "perWordLangDetection", "langDetectionThreshold", "allowedLanguages"], fulfill);
+    brapi.storage.local.remove(names || ["voiceName", "rate", "pitch", "volume", "showHighlighting", "languages", "highlightFontSize", "highlightWindowSize", "preferredVoices", "useEmbeddedPlayer", "fixBtSilenceGap", "darkMode", "perWordLangDetection", "langDetectionThreshold", "minWordLengthForSwitch", "allowedLanguages"], fulfill);
   });
 }
 

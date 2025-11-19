@@ -123,6 +123,16 @@
           Minimum confidence level (50-100%) to switch voices. Lower values are more aggressive, higher values are more conservative.
         </small>
       </div>
+
+      <div id="min-word-length-label" style="display: none;">
+        <span>Minimum Word Length for Voice Switch</span>
+      </div>
+      <div id="min-word-length-control" style="display: none;">
+        <div id="min-word-length" class="slider" data-min="1" data-max="10" data-steps="9"></div>
+        <small class="form-text text-muted">
+          Skip TTS voice switching for words shorter than this length (1-10 characters). Higher values reduce jarring switches for short words like "AI", "API" at fast speeds. Set to 1 to always switch voices.
+        </small>
+      </div>
     </div>
 
     <div class="form-group buttons">
