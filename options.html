@@ -100,6 +100,29 @@
         <option value="false" data-i18n="options_audio_playback_standalone"></option>
         <option value="true" data-i18n="options_audio_playback_embedded"></option>
       </select>
+
+      <div>
+        <span>Per-Word Language Detection</span>
+      </div>
+      <div>
+        <label>
+          <input type="checkbox" id="per-word-lang-detection">
+          Enable automatic language switching for mixed-language text
+        </label>
+        <small class="form-text text-muted">
+          Automatically detects and switches TTS voices for each word based on its language (e.g., Greek words use Greek TTS, English words use English TTS)
+        </small>
+      </div>
+
+      <div id="lang-detection-threshold-label" style="display: none;">
+        <span>Detection Confidence Threshold</span>
+      </div>
+      <div id="lang-detection-threshold-control" style="display: none;">
+        <div id="lang-detection-threshold" class="slider" data-min="0.5" data-max="1" data-steps="20"></div>
+        <small class="form-text text-muted">
+          Minimum confidence level (50-100%) to switch voices. Lower values are more aggressive, higher values are more conservative.
+        </small>
+      </div>
     </div>
 
     <div class="form-group buttons">

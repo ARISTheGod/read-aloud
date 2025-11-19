@@ -217,6 +217,40 @@
 
 
 
+  //per-word language detection
+  domReadyPromise
+    .then(() => {
+      $("#per-word-lang-detection")
+        .change(function() {
+          const enabled = $(this).is(':checked');
+          updateSettings({perWordLangDetection: enabled});
+          $("#lang-detection-threshold-label, #lang-detection-threshold-control").toggle(enabled);
+        })
+    })
+
+  rxjs.combineLatest([observeSetting("perWordLangDetection"), domReadyPromise])
+    .subscribe(([perWordLangDetection]) => {
+      const enabled = perWordLangDetection || defaults.perWordLangDetection;
+      $("#per-word-lang-detection").prop('checked', enabled);
+      $("#lang-detection-threshold-label, #lang-detection-threshold-control").toggle(enabled);
+    })
+
+  //language detection threshold
+  const langDetectionThresholdSliderPromise = domReadyPromise
+    .then(() => {
+      return createSlider($("#lang-detection-threshold").get(0), {
+          onChange(value) {
+            updateSettings({langDetectionThreshold: value})
+          }
+        })
+    })
+
+  rxjs.combineLatest([observeSetting("langDetectionThreshold"), langDetectionThresholdSliderPromise])
+    .subscribe(([langDetectionThreshold, slider]) => 
+      slider.setValue(langDetectionThreshold || defaults.langDetectionThreshold))
+
+
+
   //buttons
   domReadyPromise
     .then(() => {
