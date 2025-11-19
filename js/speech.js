@@ -452,8 +452,8 @@ function Speech(texts, options) {
 /**
  * MultiLanguageSpeech - Wrapper for per-word language detection and TTS switching
  * 
- * This class manages multiple Speech objects for different language segments,
- * enabling automatic voice switching for mixed-language text.
+ * This class manages language switching with optimized queueing to minimize audio gaps.
+ * It creates a unified text array and uses chrome.tts enqueue mode for seamless transitions.
  * 
  * @param {Array<string>} texts - Array of text strings to read
  * @param {Object} options - Base options including rate, pitch, volume, lang, voice
@@ -461,85 +461,105 @@ function Speech(texts, options) {
  */
 function MultiLanguageSpeech(texts, options, settings) {
   const self = this;
-  let speechQueue = [];
-  let currentSpeechIndex = 0;
-  let currentSpeech = null;
-  const playbackState$ = new rxjs.BehaviorSubject("paused");
+  let segmentTexts = [];
+  let segmentOptions = [];
+  let currentIndex = 0;
+  let isSpeaking = false;
+  let isPaused = false;
   let onEndCallback = null;
-
-  // Initialize the speech queue asynchronously
-  const initPromise = initializeSpeechQueue();
+  
+  // Initialize segments asynchronously
+  const initPromise = initializeSegments();
 
   // Public API methods
   this.play = () => {
-    playbackState$.next("resumed");
-    return initPromise.then(() => playCurrentSpeech());
+    return initPromise.then(() => {
+      isPaused = false;
+      if (!isSpeaking) {
+        return startPlayback();
+      } else if (brapi.tts) {
+        brapi.tts.resume();
+      }
+      return Promise.resolve();
+    });
   };
 
   this.pause = () => {
-    playbackState$.next("paused");
-    if (currentSpeech) currentSpeech.pause();
+    isPaused = true;
+    if (brapi.tts) {
+      brapi.tts.pause();
+    }
   };
 
   this.stop = () => {
-    if (currentSpeech) currentSpeech.stop();
-    currentSpeechIndex = 0;
-    currentSpeech = null;
+    isSpeaking = false;
+    isPaused = false;
+    currentIndex = 0;
+    if (brapi.tts) {
+      brapi.tts.stop();
+    }
   };
 
   this.getState = async () => {
-    if (currentSpeech) {
-      return await currentSpeech.getState();
-    }
+    if (isPaused) return "PAUSED";
+    if (isSpeaking) return "PLAYING";
     return "PAUSED";
   };
 
   this.getInfo = () => {
-    if (currentSpeech) {
-      return currentSpeech.getInfo();
-    }
     return {
-      texts: texts,
-      position: { index: 0 },
+      texts: segmentTexts.length > 0 ? segmentTexts : texts,
+      position: { index: currentIndex },
       isRTL: /^(ar|az|dv|he|iw|ku|fa|ur)\b/.test(options.lang),
       isPiper: false,
     };
   };
 
   this.canForward = () => {
-    return currentSpeechIndex < speechQueue.length - 1 || 
-           (currentSpeech && currentSpeech.canForward());
+    return currentIndex < segmentTexts.length - 1;
   };
 
   this.canRewind = () => {
-    return currentSpeechIndex > 0 || 
-           (currentSpeech && currentSpeech.canRewind());
+    return currentIndex > 0;
   };
 
   this.forward = () => {
-    if (currentSpeech && currentSpeech.canForward()) {
-      currentSpeech.forward();
-    } else if (currentSpeechIndex < speechQueue.length - 1) {
-      moveToNextSpeech();
+    if (currentIndex < segmentTexts.length - 1) {
+      if (brapi.tts) brapi.tts.stop();
+      currentIndex++;
+      if (!isPaused) {
+        startPlayback();
+      }
     }
   };
 
   this.rewind = () => {
-    if (currentSpeech && currentSpeech.canRewind()) {
-      currentSpeech.rewind();
-    } else if (currentSpeechIndex > 0) {
-      moveToPreviousSpeech();
+    if (currentIndex > 0) {
+      if (brapi.tts) brapi.tts.stop();
+      currentIndex--;
+      if (!isPaused) {
+        startPlayback();
+      }
     }
   };
 
   this.seek = (index) => {
-    if (currentSpeech) currentSpeech.seek(index);
+    if (index >= 0 && index < segmentTexts.length) {
+      if (brapi.tts) brapi.tts.stop();
+      currentIndex = index;
+      if (!isPaused) {
+        startPlayback();
+      }
+    }
   };
 
   this.gotoEnd = () => {
-    if (speechQueue.length > 0) {
-      currentSpeechIndex = speechQueue.length - 1;
-      return playCurrentSpeech();
+    if (segmentTexts.length > 0) {
+      if (brapi.tts) brapi.tts.stop();
+      currentIndex = segmentTexts.length - 1;
+      if (!isPaused) {
+        startPlayback();
+      }
     }
   };
 
@@ -550,9 +570,9 @@ function MultiLanguageSpeech(texts, options, settings) {
   });
 
   /**
-   * Initialize the speech queue by segmenting text by language
+   * Initialize segments with pre-loaded voices
    */
-  async function initializeSpeechQueue() {
+  async function initializeSegments() {
     try {
       // Combine all texts into one for segmentation
       const fullText = texts.join("\n\n");
@@ -561,17 +581,15 @@ function MultiLanguageSpeech(texts, options, settings) {
       const segments = await LanguageDetector.segmentTextByLanguage(fullText, {
         expectedLanguages: settings.allowedLanguages || defaults.allowedLanguages,
         threshold: settings.langDetectionThreshold || defaults.langDetectionThreshold,
-        defaultLang: options.lang.split('-')[0] // Use base language as default
+        defaultLang: options.lang.split('-')[0]
       });
 
       console.log("Language segments detected:", segments.length, segments.map(s => ({lang: s.lang, preview: s.text.substring(0, 30)})));
 
-      // PRE-LOAD ALL VOICES IN PARALLEL (Performance optimization for fast playback)
-      // Extract unique languages from all segments
+      // PRE-LOAD ALL VOICES IN PARALLEL
       const uniqueLangs = [...new Set(segments.map(s => s.lang))];
       const voiceCache = new Map();
       
-      // Load all voices in parallel using Promise.all
       await Promise.all(
         uniqueLangs.map(async lang => {
           try {
@@ -585,99 +603,88 @@ function MultiLanguageSpeech(texts, options, settings) {
         })
       );
 
-      // Create Speech objects for each language segment using pre-loaded voices
+      // Build segment arrays
       for (const segment of segments) {
-        if (!segment.text.trim()) continue; // Skip empty segments
-
-        const segmentOptions = {...options};
-        segmentOptions.lang = segment.lang;
-
-        // Use pre-loaded voice from cache (no await needed - instant!)
+        if (!segment.text.trim()) continue;
+        
         const voice = voiceCache.get(segment.lang);
         if (voice) {
-          segmentOptions.voice = voice;
+          segmentTexts.push(segment.text);
+          segmentOptions.push({
+            ...options,
+            lang: segment.lang,
+            voice: voice
+          });
         } else {
-          // Fall back to default voice if no voice available for this language
           console.warn("No voice available for language:", segment.lang, "- using default");
-          segmentOptions.voice = options.voice;
-          segmentOptions.lang = options.lang;
+          segmentTexts.push(segment.text);
+          segmentOptions.push(options);
         }
-
-        // Create Speech object for this segment
-        const speech = new Speech([segment.text], segmentOptions);
-        speechQueue.push(speech);
       }
 
-      // If no segments were created (detection failed), fall back to single language
-      if (speechQueue.length === 0) {
+      // Fallback to single language if no segments
+      if (segmentTexts.length === 0) {
         console.warn("Language detection produced no segments, falling back to single language");
-        const speech = new Speech(texts, options);
-        speechQueue.push(speech);
+        segmentTexts = texts;
+        segmentOptions = [options];
       }
 
     } catch (error) {
       console.error("Error in language detection, falling back to single language:", error);
-      // Fall back to single-language mode
-      const speech = new Speech(texts, options);
-      speechQueue.push(speech);
+      segmentTexts = texts;
+      segmentOptions = [options];
     }
   }
 
   /**
-   * Play the current speech in the queue
+   * Start playback from current index
+   * Uses chrome.tts.speak with enqueue for minimal gaps
    */
-  function playCurrentSpeech() {
-    if (currentSpeechIndex >= speechQueue.length) {
-      // Reached end of queue
+  function startPlayback() {
+    if (!brapi.tts || currentIndex >= segmentTexts.length) {
+      isSpeaking = false;
       if (onEndCallback) onEndCallback();
-      return;
+      return Promise.resolve();
     }
 
-    if (currentSpeech) {
-      currentSpeech.stop();
-    }
-
-    currentSpeech = speechQueue[currentSpeechIndex];
+    isSpeaking = true;
+    const startIndex = currentIndex;
     
-    // Set up end callback to move to next segment
-    currentSpeech.onEnd = (err) => {
-      if (err) {
-        // Error occurred, propagate to parent callback
-        if (onEndCallback) onEndCallback(err);
-      } else {
-        // Move to next segment
-        currentSpeechIndex++;
-        if (currentSpeechIndex < speechQueue.length && playbackState$.value === "resumed") {
-          playCurrentSpeech();
-        } else {
-          // Reached end of all segments
-          if (onEndCallback) onEndCallback();
+    // Queue all remaining segments immediately for seamless playback
+    // The first segment starts immediately, subsequent ones enqueue
+    for (let i = startIndex; i < segmentTexts.length; i++) {
+      const isFirst = (i === startIndex);
+      const opts = segmentOptions[i];
+      const text = segmentTexts[i];
+      
+      brapi.tts.speak(text, {
+        voiceName: opts.voice.voiceId || opts.voice.voiceName,
+        lang: opts.lang,
+        rate: opts.rate,
+        pitch: opts.pitch,
+        volume: opts.volume,
+        enqueue: !isFirst, // Enqueue all except first for seamless transitions
+        requiredEventTypes: ["start", "end"],
+        desiredEventTypes: ["start", "end", "error"],
+        onEvent: (event) => {
+          if (event.type === 'start') {
+            // Update current index when each segment starts
+            currentIndex = i;
+          } else if (event.type === 'end') {
+            if (i === segmentTexts.length - 1) {
+              // Last segment finished
+              isSpeaking = false;
+              currentIndex = i;
+              if (onEndCallback) onEndCallback();
+            }
+          } else if (event.type === 'error') {
+            isSpeaking = false;
+            if (onEndCallback) onEndCallback(event.error);
+          }
         }
-      }
-    };
-
-    return currentSpeech.play();
-  }
-
-  /**
-   * Move to next speech segment
-   */
-  function moveToNextSpeech() {
-    if (currentSpeech) currentSpeech.stop();
-    currentSpeechIndex++;
-    if (currentSpeechIndex < speechQueue.length && playbackState$.value === "resumed") {
-      playCurrentSpeech();
+      });
     }
-  }
-
-  /**
-   * Move to previous speech segment
-   */
-  function moveToPreviousSpeech() {
-    if (currentSpeech) currentSpeech.stop();
-    currentSpeechIndex--;
-    if (currentSpeechIndex >= 0 && playbackState$.value === "resumed") {
-      playCurrentSpeech();
-    }
+    
+    return Promise.resolve();
   }
 }
