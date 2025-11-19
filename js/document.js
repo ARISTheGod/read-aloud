@@ -324,6 +324,12 @@ function Doc(source, onEnd) {
     const voice = await getSpeechVoice(settings.voiceName, options.lang)
     if (!voice) throw new Error(JSON.stringify({code: "error_no_voice", lang: options.lang}));
     options.voice = voice;
+
+    // Check if per-word language detection is enabled
+    if (settings.perWordLangDetection && typeof LanguageDetector !== 'undefined') {
+      return new MultiLanguageSpeech(texts, options, settings);
+    }
+
     return new Speech(texts, options);
   }
 

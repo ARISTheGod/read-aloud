@@ -447,3 +447,224 @@ function Speech(texts, options) {
     }
   }
 }
+
+
+/**
+ * MultiLanguageSpeech - Wrapper for per-word language detection and TTS switching
+ * 
+ * This class manages multiple Speech objects for different language segments,
+ * enabling automatic voice switching for mixed-language text.
+ * 
+ * @param {Array<string>} texts - Array of text strings to read
+ * @param {Object} options - Base options including rate, pitch, volume, lang, voice
+ * @param {Object} settings - User settings including perWordLangDetection, langDetectionThreshold, allowedLanguages
+ */
+function MultiLanguageSpeech(texts, options, settings) {
+  const self = this;
+  let speechQueue = [];
+  let currentSpeechIndex = 0;
+  let currentSpeech = null;
+  const playbackState$ = new rxjs.BehaviorSubject("paused");
+  let onEndCallback = null;
+
+  // Initialize the speech queue asynchronously
+  const initPromise = initializeSpeechQueue();
+
+  // Public API methods
+  this.play = () => {
+    playbackState$.next("resumed");
+    return initPromise.then(() => playCurrentSpeech());
+  };
+
+  this.pause = () => {
+    playbackState$.next("paused");
+    if (currentSpeech) currentSpeech.pause();
+  };
+
+  this.stop = () => {
+    if (currentSpeech) currentSpeech.stop();
+    currentSpeechIndex = 0;
+    currentSpeech = null;
+  };
+
+  this.getState = async () => {
+    if (currentSpeech) {
+      return await currentSpeech.getState();
+    }
+    return "PAUSED";
+  };
+
+  this.getInfo = () => {
+    if (currentSpeech) {
+      return currentSpeech.getInfo();
+    }
+    return {
+      texts: texts,
+      position: { index: 0 },
+      isRTL: /^(ar|az|dv|he|iw|ku|fa|ur)\b/.test(options.lang),
+      isPiper: false,
+    };
+  };
+
+  this.canForward = () => {
+    return currentSpeechIndex < speechQueue.length - 1 || 
+           (currentSpeech && currentSpeech.canForward());
+  };
+
+  this.canRewind = () => {
+    return currentSpeechIndex > 0 || 
+           (currentSpeech && currentSpeech.canRewind());
+  };
+
+  this.forward = () => {
+    if (currentSpeech && currentSpeech.canForward()) {
+      currentSpeech.forward();
+    } else if (currentSpeechIndex < speechQueue.length - 1) {
+      moveToNextSpeech();
+    }
+  };
+
+  this.rewind = () => {
+    if (currentSpeech && currentSpeech.canRewind()) {
+      currentSpeech.rewind();
+    } else if (currentSpeechIndex > 0) {
+      moveToPreviousSpeech();
+    }
+  };
+
+  this.seek = (index) => {
+    if (currentSpeech) currentSpeech.seek(index);
+  };
+
+  this.gotoEnd = () => {
+    if (speechQueue.length > 0) {
+      currentSpeechIndex = speechQueue.length - 1;
+      return playCurrentSpeech();
+    }
+  };
+
+  // Property for external callback
+  Object.defineProperty(this, 'onEnd', {
+    get: () => onEndCallback,
+    set: (callback) => { onEndCallback = callback; }
+  });
+
+  /**
+   * Initialize the speech queue by segmenting text by language
+   */
+  async function initializeSpeechQueue() {
+    try {
+      // Combine all texts into one for segmentation
+      const fullText = texts.join("\n\n");
+      
+      // Segment text by language
+      const segments = await LanguageDetector.segmentTextByLanguage(fullText, {
+        expectedLanguages: settings.allowedLanguages || defaults.allowedLanguages,
+        threshold: settings.langDetectionThreshold || defaults.langDetectionThreshold,
+        defaultLang: options.lang.split('-')[0] // Use base language as default
+      });
+
+      console.log("Language segments detected:", segments.length, segments.map(s => ({lang: s.lang, preview: s.text.substring(0, 30)})));
+
+      // Create Speech objects for each language segment
+      for (const segment of segments) {
+        if (!segment.text.trim()) continue; // Skip empty segments
+
+        const segmentOptions = {...options};
+        segmentOptions.lang = segment.lang;
+
+        // Get appropriate voice for this language
+        try {
+          const voice = await getSpeechVoice(settings.voiceName, segment.lang);
+          if (voice) {
+            segmentOptions.voice = voice;
+          } else {
+            // Fall back to default voice if no voice available for this language
+            console.warn("No voice available for language:", segment.lang, "- using default");
+            segmentOptions.voice = options.voice;
+            segmentOptions.lang = options.lang;
+          }
+        } catch (error) {
+          console.warn("Error getting voice for language:", segment.lang, error);
+          segmentOptions.voice = options.voice;
+          segmentOptions.lang = options.lang;
+        }
+
+        // Create Speech object for this segment
+        const speech = new Speech([segment.text], segmentOptions);
+        speechQueue.push(speech);
+      }
+
+      // If no segments were created (detection failed), fall back to single language
+      if (speechQueue.length === 0) {
+        console.warn("Language detection produced no segments, falling back to single language");
+        const speech = new Speech(texts, options);
+        speechQueue.push(speech);
+      }
+
+    } catch (error) {
+      console.error("Error in language detection, falling back to single language:", error);
+      // Fall back to single-language mode
+      const speech = new Speech(texts, options);
+      speechQueue.push(speech);
+    }
+  }
+
+  /**
+   * Play the current speech in the queue
+   */
+  function playCurrentSpeech() {
+    if (currentSpeechIndex >= speechQueue.length) {
+      // Reached end of queue
+      if (onEndCallback) onEndCallback();
+      return;
+    }
+
+    if (currentSpeech) {
+      currentSpeech.stop();
+    }
+
+    currentSpeech = speechQueue[currentSpeechIndex];
+    
+    // Set up end callback to move to next segment
+    currentSpeech.onEnd = (err) => {
+      if (err) {
+        // Error occurred, propagate to parent callback
+        if (onEndCallback) onEndCallback(err);
+      } else {
+        // Move to next segment
+        currentSpeechIndex++;
+        if (currentSpeechIndex < speechQueue.length && playbackState$.value === "resumed") {
+          playCurrentSpeech();
+        } else {
+          // Reached end of all segments
+          if (onEndCallback) onEndCallback();
+        }
+      }
+    };
+
+    return currentSpeech.play();
+  }
+
+  /**
+   * Move to next speech segment
+   */
+  function moveToNextSpeech() {
+    if (currentSpeech) currentSpeech.stop();
+    currentSpeechIndex++;
+    if (currentSpeechIndex < speechQueue.length && playbackState$.value === "resumed") {
+      playCurrentSpeech();
+    }
+  }
+
+  /**
+   * Move to previous speech segment
+   */
+  function moveToPreviousSpeech() {
+    if (currentSpeech) currentSpeech.stop();
+    currentSpeechIndex--;
+    if (currentSpeechIndex >= 0 && playbackState$.value === "resumed") {
+      playCurrentSpeech();
+    }
+  }
+}
