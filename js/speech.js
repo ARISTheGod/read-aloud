@@ -581,6 +581,7 @@ function MultiLanguageSpeech(texts, options, settings) {
       const segments = await LanguageDetector.segmentTextByLanguage(fullText, {
         expectedLanguages: settings.allowedLanguages || defaults.allowedLanguages,
         threshold: settings.langDetectionThreshold || defaults.langDetectionThreshold,
+        minWordLength: settings.minWordLengthForSwitch || defaults.minWordLengthForSwitch,
         defaultLang: options.lang.split('-')[0]
       });
 

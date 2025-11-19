@@ -225,6 +225,7 @@
           const enabled = $(this).is(':checked');
           updateSettings({perWordLangDetection: enabled});
           $("#lang-detection-threshold-label, #lang-detection-threshold-control").toggle(enabled);
+          $("#min-word-length-label, #min-word-length-control").toggle(enabled);
         })
     })
 
@@ -233,6 +234,7 @@
       const enabled = perWordLangDetection || defaults.perWordLangDetection;
       $("#per-word-lang-detection").prop('checked', enabled);
       $("#lang-detection-threshold-label, #lang-detection-threshold-control").toggle(enabled);
+      $("#min-word-length-label, #min-word-length-control").toggle(enabled);
     })
 
   //language detection threshold
@@ -248,6 +250,20 @@
   rxjs.combineLatest([observeSetting("langDetectionThreshold"), langDetectionThresholdSliderPromise])
     .subscribe(([langDetectionThreshold, slider]) => 
       slider.setValue(langDetectionThreshold || defaults.langDetectionThreshold))
+
+  //minimum word length for switch
+  const minWordLengthSliderPromise = domReadyPromise
+    .then(() => {
+      return createSlider($("#min-word-length").get(0), {
+          onChange(value) {
+            updateSettings({minWordLengthForSwitch: Math.round(value)})
+          }
+        })
+    })
+
+  rxjs.combineLatest([observeSetting("minWordLengthForSwitch"), minWordLengthSliderPromise])
+    .subscribe(([minWordLengthForSwitch, slider]) => 
+      slider.setValue(minWordLengthForSwitch || defaults.minWordLengthForSwitch))
 
 
 
