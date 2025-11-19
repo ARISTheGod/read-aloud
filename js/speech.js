@@ -466,6 +466,7 @@ function MultiLanguageSpeech(texts, options, settings) {
   let currentSpeech = null;
   const playbackState$ = new rxjs.BehaviorSubject("paused");
   let onEndCallback = null;
+  const originalTexts = texts; // Store original texts for highlighting
 
   // Initialize the speech queue asynchronously
   const initPromise = initializeSpeechQueue();
@@ -495,12 +496,11 @@ function MultiLanguageSpeech(texts, options, settings) {
   };
 
   this.getInfo = () => {
-    if (currentSpeech) {
-      return currentSpeech.getInfo();
-    }
+    // Always return original texts for proper highlighting display
+    // This ensures the full text is shown in the player, not individual segments
     return {
-      texts: texts,
-      position: { index: 0 },
+      texts: originalTexts,
+      position: { index: 0 }, // Always show first item as active for now
       isRTL: /^(ar|az|dv|he|iw|ku|fa|ur)\b/.test(options.lang),
       isPiper: false,
     };
@@ -605,6 +605,11 @@ function MultiLanguageSpeech(texts, options, settings) {
 
         // Create Speech object for this segment
         const speech = new Speech([segment.text], segmentOptions);
+        
+        // Pre-trigger speech initialization to reduce delays
+        // The Speech constructor initializes the engine and prepares for playback
+        speech.getState().catch(() => {}); // Trigger any lazy initialization
+        
         speechQueue.push(speech);
       }
 
@@ -614,6 +619,8 @@ function MultiLanguageSpeech(texts, options, settings) {
         const speech = new Speech(texts, options);
         speechQueue.push(speech);
       }
+
+      console.log("MultiLanguageSpeech: Initialized", speechQueue.length, "speech segments with pre-loaded voices");
 
     } catch (error) {
       console.error("Error in language detection, falling back to single language:", error);
@@ -630,7 +637,7 @@ function MultiLanguageSpeech(texts, options, settings) {
     if (currentSpeechIndex >= speechQueue.length) {
       // Reached end of queue
       if (onEndCallback) onEndCallback();
-      return;
+      return Promise.resolve();
     }
 
     if (currentSpeech) {
@@ -645,9 +652,10 @@ function MultiLanguageSpeech(texts, options, settings) {
         // Error occurred, propagate to parent callback
         if (onEndCallback) onEndCallback(err);
       } else {
-        // Move to next segment
+        // Move to next segment immediately without delay
         currentSpeechIndex++;
         if (currentSpeechIndex < speechQueue.length && playbackState$.value === "resumed") {
+          // Immediately start next segment for seamless playback
           playCurrentSpeech();
         } else {
           // Reached end of all segments
